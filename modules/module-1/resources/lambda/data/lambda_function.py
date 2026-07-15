@@ -325,56 +325,47 @@ def lambda_handler(event, context):
         return generateResponse(200, json.dumps({"body": responses}))
 
     if auth_is_valid(event):
-
         if event["httpMethod"] == "POST" and event["path"] == "/change-password":
             data = json.loads(event["body"])
-
-            id = data["id"].strip()
-
-            if "newPassword" not in data or "confirmNewPassword" not in data:
-                responses = "New password & Confirm new password are mandatory"
-                return generateResponse(200, json.dumps({"body": responses}))
-
-            newPassword = data["newPassword"].strip()
-            confirmNewPassword = data["confirmNewPassword"].strip()
-
-            if newPassword != confirmNewPassword:
-                responses = "New password & Confirm new password must match"
-                return generateResponse(200, json.dumps({"body": responses}))
-
-            email = ""
-            response = dbUserTable.scan()
-            items = response["Items"]
-
-            while "LastEvaluatedKey" in response:
-                response = dbUserTable.scan(
-                    ExclusiveStartKey=response["LastEvaluatedKey"]
+            JWT_TOKEN = event["headers"].get("JWT_TOKEN") or event["headers"].get("jwt_token")
+            if not JWT_TOKEN:
+                responses = "Authorization required"
+                return generateResponse(401, json.dumps({"body": responses}))
+            try:
+                JWT_SECRET = os.environ["JWT_SECRET"]
+                decode_token = jwt.decode(JWT_TOKEN, JWT_SECRET, algorithms=["HS256"])
+                authenticated_email = decode_token.get("email")  #IDENTIDAD REAL
+                authenticated_id = decode_token.get("id")        #ID REAL
+                
+                if "newPassword" not in data or "confirmNewPassword" not in data:
+                    responses = "New password & Confirm new password are mandatory"
+                    return generateResponse(200, json.dumps({"body": responses}))
+                
+                newPassword = data["newPassword"].strip()
+                confirmNewPassword = data["confirmNewPassword"].strip()
+                
+                if newPassword != confirmNewPassword:
+                    responses = "New password & Confirm new password must match"
+                    return generateResponse(200, json.dumps({"body": responses}))
+                
+                encryptedPW = bcrypt.hashpw(newPassword.encode("utf-8"), bcrypt.gensalt(rounds=10)).decode("utf-8")
+                update_response = dbUserTable.update_item(
+                    Key={"email": authenticated_email},  # ✅ EMAIL DEL TOKEN
+                    UpdateExpression="set password = :r",
+                    ExpressionAttributeValues={":r": encryptedPW},
+                    ReturnValues="UPDATED_NEW",
                 )
-                items.extend(response["Items"])
-
-            print(items)
-            for item in items:
-                if item["id"] == id:
-                    email = item["email"]
-                    break
-
-            encryptedPW = bcrypt.hashpw(
-                newPassword.encode("utf-8"), bcrypt.gensalt(rounds=10)
-            ).decode("utf-8")
-
-            update_response = dbUserTable.update_item(
-                Key={
-                    "email": email,
-                },
-                UpdateExpression="set password = :r",
-                ExpressionAttributeValues={
-                    ":r": encryptedPW,
-                },
-                ReturnValues="UPDATED_NEW",
-            )
-
-            responses = "Password changed successfully"
-            return generateResponse(200, json.dumps({"body": responses}))
+                
+                responses = "Password changed successfully"
+                return generateResponse(200, json.dumps({"body": responses}))
+            
+            except jwt.ExpiredSignatureError:
+                responses = "Token expired"
+                return generateResponse(401, json.dumps({"body": responses}))
+            except jwt.InvalidTokenError:
+                responses = "Invalid token"
+                return generateResponse(401, json.dumps({"body": responses}))
+        
 
         elif event["httpMethod"] == "POST" and event["path"] == "/ban-user":
             data = json.loads(event["body"])
