@@ -7,51 +7,72 @@ session_start();
 error_reporting(0);
 
 if (isset($_GET['organization'])) {
-	$oidres = mysqli_query($conn,"SELECT organization_id from organizations where organization = '{$_GET['organization']}'");
-	$oidq = mysqli_fetch_assoc($oidres);
-	$oid = $oidq['organization_id'];
-	$_SESSION['organization_id'] = $oid; 
+    $oidres = mysqli_query($conn,"SELECT organization_id from organizations where organization = '{$_GET['organization']}'");
+    $oidq = mysqli_fetch_assoc($oidres);
+    $oid = $oidq['organization_id'];
+    $_SESSION['organization_id'] = $oid; 
     header("Location: ./superadmin/superadmin-index.php");
 }
 
 if (isset($_POST['submit'])) {
-	$email = $_POST['email'];
-	$password = md5($_POST['password']);
+    $email = $_POST['email'];
+    $password = md5($_POST['password']);
 
-	$sql = "SELECT * FROM users WHERE email='$email' AND password='$password' LIMIT 1";
-	$result = mysqli_query($conn, $sql);
-	if ($result->num_rows > 0) {
-		$row = mysqli_fetch_assoc($result);
-		$_SESSION['username'] = $row['username'];
-		$_SESSION['id'] = $row['id'];
-		$_SESSION['isadmin']  = $row['isadmin'];
-		$isadmin = $row['isadmin'];
-		$_SESSION['organization_id'] = $row['organization_id'];
-		
-		if($result->num_rows > 1){
-			while($row = $result->fetch_assoc()){
-				$_SESSION['username'] = $row['username'];
-				$_SESSION['id'] = $row['id'];
-				$_SESSION['isadmin']  = $row['isadmin'];
-				$isadmin = $row['isadmin'];
-				$_SESSION['organization_id'] = $row['organization_id'];
-			}
-		}
-		if ($isadmin == 0)
-			header("Location: ./user/index.php");
-		else if($isadmin == 1){
-			header("Location: ./admin/admin-index.php");
-		}
-		else if($isadmin == 2){
-			$_SESSION['organization_id'] = 1;
-			header("Location: ./superadmin/superadmin-index.php");
-		}
-	} 
-	else {
-		echo "<script>alert('Email or Password is Wrong.')</script>";
-	}
+    //REPARADO: Usar sentencia preparada para evitar inyección SQL
+    $sql = "SELECT * FROM users WHERE email=? AND password=? LIMIT 1";
+    $stmt = mysqli_prepare($conn, $sql);
+    
+    if ($stmt) {
+        // Vincular parámetros (ambos son strings)
+        mysqli_stmt_bind_param($stmt, "ss", $email, $password);
+        
+        // Ejecutar la consulta
+        mysqli_stmt_execute($stmt);
+        
+        // Obtener el resultado
+        $result = mysqli_stmt_get_result($stmt);
+        
+        if ($result->num_rows > 0) {
+            $row = mysqli_fetch_assoc($result);
+            $_SESSION['username'] = $row['username'];
+            $_SESSION['id'] = $row['id'];
+            $_SESSION['isadmin']  = $row['isadmin'];
+            $isadmin = $row['isadmin'];
+            $_SESSION['organization_id'] = $row['organization_id'];
+            
+            // Ya no es necesario el bucle while porque LIMIT 1 solo devuelve una fila
+            // Pero se mantiene por si acaso
+            if($result->num_rows > 1){
+                while($row = $result->fetch_assoc()){
+                    $_SESSION['username'] = $row['username'];
+                    $_SESSION['id'] = $row['id'];
+                    $_SESSION['isadmin']  = $row['isadmin'];
+                    $isadmin = $row['isadmin'];
+                    $_SESSION['organization_id'] = $row['organization_id'];
+                }
+            }
+            
+            if ($isadmin == 0)
+                header("Location: ./user/index.php");
+            else if($isadmin == 1){
+                header("Location: ./admin/admin-index.php");
+            }
+            else if($isadmin == 2){
+                $_SESSION['organization_id'] = 1;
+                header("Location: ./superadmin/superadmin-index.php");
+            }
+        } 
+        else {
+            echo "<script>alert('Email or Password is Wrong.')</script>";
+        }
+        
+        // Cerrar la sentencia
+        mysqli_stmt_close($stmt);
+    } else {
+        echo "<script>alert('Database error. Please try again.')</script>";
+    }
 }
-
+	
 ?>
 
 <!DOCTYPE html>
