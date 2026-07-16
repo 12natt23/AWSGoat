@@ -544,7 +544,6 @@ def lambda_handler(event, context):
                 return generateResponse(500, json.dumps(str(traceback.format_exc())))
 
         elif event["httpMethod"] == "POST" and event["path"] == "/get-users":
-            print("inside get-users level")
             client = boto3.client("dynamodb")
             JWT_TOKEN = event["headers"].get("JWT_TOKEN") or event["headers"].get("jwt_token")
             if not JWT_TOKEN:
@@ -556,15 +555,17 @@ def lambda_handler(event, context):
                 decode_token = jwt.decode(JWT_TOKEN, JWT_SECRET, algorithms=["HS256"])
                 real_auth_level = decode_token.get("authLevel")  #AUTHLEVEL REAL 
                 #USAR EL AUTHLEVEL REAL PARA LA CONSULTA
+                print(f"Real authLevel from token: {real_auth_level}")
                 
                 if real_auth_level == "200":  # Author
-                    exec_statement = """SELECT id, name, username, email FROM "blog-users" where authLevel in ('200','100');"""
+                    exec_statement = """SELECT * FROM "blog-users" where authLevel in ('200','100');"""
                 elif real_auth_level == "100":  # Editor
-                    exec_statement = """SELECT id, name, username, email FROM "blog-users" where authLevel in ('200','100','0');"""
+                    exec_statement = """SELECT * FROM "blog-users" where authLevel in ('200','100','0');"""
                 else:  # Admin o cualquier otro
-                    exec_statement = 'SELECT id, name, username, email FROM "blog-users";'
+                    exec_statement = 'SELECT * FROM "blog-users";'
 
-                print(exec_statement)
+                print(f"Executing: {exec_statement}")
+                
                 responses = client.execute_statement(Statement=exec_statement)
                 print(responses)
                 if responses["Items"] != {}:
@@ -598,15 +599,16 @@ def lambda_handler(event, context):
 
                 print("Response ", responses)
                 return generateResponse(200, json.dumps({"body": responses}))
-            except Exception as e:
-                print("Except block ", e)
-                return generateResponse(500, json.dumps(str(traceback.format_exc())))
+            
             except jwt.ExpiredSignatureError:
                 responses = "Token expired"
                 return generateResponse(401, json.dumps({"body": responses}))
             except jwt.InvalidTokenError:
                 responses = "Invalid token"
                 return generateResponse(401, json.dumps({"body": responses}))
+            except Exception as e:
+                print("Except block ", e)
+                return generateResponse(500, json.dumps(str(traceback.format_exc())))
 
         elif event["httpMethod"] == "POST" and event["path"] == "/delete-user":
             data = json.loads(event["body"])
