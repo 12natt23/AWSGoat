@@ -4,6 +4,8 @@ include 'config.inc';
 
 session_start();
 
+die("LOGIN MODIFICADO");
+
 error_reporting(0);
 
 if (isset($_GET['organization'])) {
