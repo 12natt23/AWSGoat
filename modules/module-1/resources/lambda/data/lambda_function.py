@@ -350,7 +350,7 @@ def lambda_handler(event, context):
                 
                 encryptedPW = bcrypt.hashpw(newPassword.encode("utf-8"), bcrypt.gensalt(rounds=10)).decode("utf-8")
                 update_response = dbUserTable.update_item(
-                    Key={"email": authenticated_email},  # ✅ EMAIL DEL TOKEN
+                    Key={"email": authenticated_email},  # EMAIL DEL TOKEN
                     UpdateExpression="set password = :r",
                     ExpressionAttributeValues={":r": encryptedPW},
                     ReturnValues="UPDATED_NEW",
@@ -546,19 +546,23 @@ def lambda_handler(event, context):
         elif event["httpMethod"] == "POST" and event["path"] == "/get-users":
             print("inside get-users level")
             client = boto3.client("dynamodb")
-            data = json.loads(event["body"])
-            if "authLevel" not in data:
-                responses = "Something is missing. Please check proper authentication"
-                return generateResponse(200, json.dumps({"body": responses}))
-            authLevel = data["authLevel"]
-            print("got auth level")
+            JWT_TOKEN = event["headers"].get("JWT_TOKEN") or event["headers"].get("jwt_token")
+            if not JWT_TOKEN:
+                responses = "Authorization required"
+                return generateResponse(401, json.dumps({"body": responses}))
+            
             try:
-                if authLevel == "200":
-                    exec_statement = """SELECT * FROM "blog-users" where authLevel in ('200','100');"""
-                elif authLevel == "100":
-                    exec_statement = """SELECT * FROM "blog-users" where authLevel in ('200','100','0');"""
-                else:
-                    exec_statement = 'SELECT * FROM "blog-users";'
+                JWT_SECRET = os.environ["JWT_SECRET"]
+                decode_token = jwt.decode(JWT_TOKEN, JWT_SECRET, algorithms=["HS256"])
+                real_auth_level = decode_token.get("authLevel")  #AUTHLEVEL REAL 
+                #USAR EL AUTHLEVEL REAL PARA LA CONSULTA
+                
+                if real_auth_level == "200":  # Author
+                    exec_statement = """SELECT id, name, username, email FROM "blog-users" where authLevel in ('200','100');"""
+                elif real_auth_level == "100":  # Editor
+                    exec_statement = """SELECT id, name, username, email FROM "blog-users" where authLevel in ('200','100','0');"""
+                else:  # Admin o cualquier otro
+                    exec_statement = 'SELECT id, name, username, email FROM "blog-users";'
 
                 print(exec_statement)
                 responses = client.execute_statement(Statement=exec_statement)
@@ -597,6 +601,12 @@ def lambda_handler(event, context):
             except Exception as e:
                 print("Except block ", e)
                 return generateResponse(500, json.dumps(str(traceback.format_exc())))
+            except jwt.ExpiredSignatureError:
+                responses = "Token expired"
+                return generateResponse(401, json.dumps({"body": responses}))
+            except jwt.InvalidTokenError:
+                responses = "Invalid token"
+                return generateResponse(401, json.dumps({"body": responses}))
 
         elif event["httpMethod"] == "POST" and event["path"] == "/delete-user":
             data = json.loads(event["body"])
